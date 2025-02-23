@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::fs;
 use macroquad::prelude::*;
-use std::fs::File;
+use std::thread::sleep;
+use std::time::Duration;
 use macroquad::miniquad::window::set_window_size;
 
 const MEM_SIZE: usize = 4096;
@@ -87,13 +88,13 @@ impl chip8 {
         }
         // draw
         else if opcode & 0xF000 == 0xD000 {
-            // prep our coordinates
-            let x_coord = self.registers[y as usize] as f32;
-            let y_coord = self.registers[x as usize] as f32;
-            let pixel_height = self.registers[n as usize];
-            println!("{}", pixel_height);
+            // prep our coordinates (ensuring that we prevent clipping with the mod (w/h)
+            let mut x_coord = (self.registers[y as usize] % 64) as f32;
+            let mut y_coord = (self.registers[x as usize] % 32) as f32;
+            let pixel_height:f32  = n as f32;
+            // let resolution_mod = 10.0;
 
-            for row_num in 0..pixel_height {
+            for row_num in 0..n {
                 let sprite_row = self.memory[self.i_register as usize + row_num as usize];
                 // we use val 128 (1000000) for the mask, and bitwise shift right every op
                 // until we are at 0
@@ -101,12 +102,16 @@ impl chip8 {
                 while mask_checker != 0 {
                     mask_checker = mask_checker >> 1;
                     if (sprite_row & mask_checker) == 0 {
-                        draw_rectangle(x_coord, y_coord, 1.0, pixel_height as f32, BLACK);
+                        draw_rectangle(x_coord, y_coord, 1.0, pixel_height, WHITE);
                     }
                     else {
-                        draw_rectangle(x_coord, y_coord, 1.0, pixel_height as f32, GREEN);
+                        draw_rectangle(x_coord, y_coord, 1.0, pixel_height, BLACK);
                     }
+
+                    x_coord += 1.0;
                 }
+
+                y_coord += 1.0;
             }
         }
         else if opcode & 0xF000 == 0xA000 {
@@ -115,6 +120,8 @@ impl chip8 {
     }
 
     fn fetch(&mut self) -> u16 {
+        println!("Entered the fetch function");
+        println!("______________________");
         // examine the current program counter (PC) instruction
         // 2 bytes
         // increment the PC by 2 bytes to move to next instruction
@@ -124,21 +131,20 @@ impl chip8 {
         //    high_byte is the most significant byte (MSB).
         //    low_byte is the least significant byte (LSB).
         //    By shifting high_byte to the left and then OR'ing it with low_byte, we get the complete 16-bit value for the opcode.
-
+        println!("PC before fetch: {}", self.program_counter);
         // fetch most sig bit
         let high = self.memory[self.program_counter as usize] as u16;
         // fetch least sig bit (remember, each opcode is 16 bits)
-        let low = self.memory[self.program_counter as usize + 1] as u16;
+        let low = self.memory[(self.program_counter + 1) as usize] as u16;
 
-        self.program_counter += 2;
+        self.program_counter = self.program_counter + 2;
 
         // perform operation on the high and low to create the 16 bit opcode
         // we shift the high bit left, then OR it with the low bit
         let op_code:u16 = (high << 8) | low;
 
-        println!("Entered the fetch function");
-        println!("op_code: {}", op_code);
-        println!("PC: {}", self.program_counter);
+        println!("current op_code: {}", op_code);
+        println!("PC after fetch: {}", self.program_counter);
 
         return op_code;
     }
@@ -171,12 +177,17 @@ impl chip8 {
 
 #[macroquad::main("chip8")]
 async fn main() {
-    set_window_size(64, 32);
+    set_window_size(64 * 10, 32 * 10);
     let mut chip8 = chip8::new();
     chip8.prep_rom();
+    clear_background(BLACK);
 
     loop {
-        let mut current_instruction = chip8.fetch();
+        let current_instruction = chip8.fetch();
         chip8.decode_and_execute(current_instruction);
+
+        next_frame().await;
+
+        sleep(Duration::from_millis(60));
     }
 }
