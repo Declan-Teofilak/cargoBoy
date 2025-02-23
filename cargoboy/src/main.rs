@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::fs;
 use macroquad::prelude::*;
 use std::fs::File;
+use macroquad::miniquad::window::set_window_size;
 
 const MEM_SIZE: usize = 4096;
 const ROM_START: usize = 0x200;
@@ -60,11 +62,12 @@ impl chip8 {
         // }
 
         // Start by getting all the relevant bit values
+        println!("opcode: {}", opcode);
         let nnn = opcode & 0x0FFF;
-        let nn = (opcode & 0x00FF) as u8;
-        let n = (opcode & 0x000F) as u8;
-        let x = ((opcode & 0x0F00) >> 8) as usize;
-        let y = ((opcode & 0x00F0) >> 4) as usize;
+        let nn = (opcode & 0x00FF);
+        let n = (opcode & 0x000F);
+        let x = ((opcode & 0x0F00) >> 8);
+        let y = ((opcode & 0x00F0) >> 4);
 
         // jump to NNN
         if opcode & 0xF000 == 0x1000 {
@@ -76,18 +79,35 @@ impl chip8 {
         }
         // set register x to value nn
         else if opcode & 0xF000 == 0x6000 {
-            self.registers[x] = nn;
+            self.registers[x as usize] = nn as u8;
         }
         // add to vx
         else if opcode & 0xF000 == 0x7000 {
-            self.registers[x] = self.registers[x] + nn;
+            self.registers[x as usize] = (self.registers[x as usize]) + nn as u8;
         }
         // draw
         else if opcode & 0xF000 == 0xD000 {
-            let height = self.registers[y];
-            let length = self.registers[x];
-            let width = self.registers[n];
-            draw_line(length as f32,  height as f32, length as f32,  height as f32, width as f32, GREEN);
+            // prep our coordinates
+            let x_coord = self.registers[y as usize] as f32;
+            let y_coord = self.registers[x as usize] as f32;
+            let pixel_height = self.registers[n as usize];
+            println!("{}", pixel_height);
+
+            for row_num in 0..pixel_height {
+                let sprite_row = self.memory[self.i_register as usize + row_num as usize];
+                // we use val 128 (1000000) for the mask, and bitwise shift right every op
+                // until we are at 0
+                let mut mask_checker = 0x80;
+                while mask_checker != 0 {
+                    mask_checker = mask_checker >> 1;
+                    if (sprite_row & mask_checker) == 0 {
+                        draw_rectangle(x_coord, y_coord, 1.0, pixel_height as f32, BLACK);
+                    }
+                    else {
+                        draw_rectangle(x_coord, y_coord, 1.0, pixel_height as f32, GREEN);
+                    }
+                }
+            }
         }
         else if opcode & 0xF000 == 0xA000 {
             self.i_register = nnn;
@@ -106,15 +126,19 @@ impl chip8 {
         //    By shifting high_byte to the left and then OR'ing it with low_byte, we get the complete 16-bit value for the opcode.
 
         // fetch most sig bit
-        let high = self.memory[self.program_counter] as u16;
+        let high = self.memory[self.program_counter as usize] as u16;
         // fetch least sig bit (remember, each opcode is 16 bits)
-        let low = self.memory[self.program_counter + 1] as u16;
+        let low = self.memory[self.program_counter as usize + 1] as u16;
+
+        self.program_counter += 2;
 
         // perform operation on the high and low to create the 16 bit opcode
         // we shift the high bit left, then OR it with the low bit
         let op_code:u16 = (high << 8) | low;
 
-        self.program_counter += 2;
+        println!("Entered the fetch function");
+        println!("op_code: {}", op_code);
+        println!("PC: {}", self.program_counter);
 
         return op_code;
     }
@@ -123,19 +147,36 @@ impl chip8 {
     fn prepare_opcodes(&self) {
        // self.opcode_handlers.insert(00E0, fn() -> () { clear_background(BLACK)});
     }
+
+    fn prep_rom(&mut self) {
+        let data = fs::read("roms/ibm_logo.ch8");
+
+        match data {
+            Ok(data) => {
+                if 0x200 + data.len() > self.memory.len() {
+                    println!("Error: ROM too large");
+                    return;
+                }
+
+                self.memory[0x200..0x200 + data.len()].copy_from_slice(&data);
+                self.program_counter = 0x200;
+            }
+            Err(e) => {
+                println!("Error loading ROM: {}", e);
+            }
+        }
+    }
+
 }
 
 #[macroquad::main("chip8")]
 async fn main() {
+    set_window_size(64, 32);
     let mut chip8 = chip8::new();
+    chip8.prep_rom();
 
     loop {
-        let current_instruction = chip8.fetch();
+        let mut current_instruction = chip8.fetch();
         chip8.decode_and_execute(current_instruction);
-        next_frame().await
     }
-}
-
-fn prepRom() {
-    let rom = File::open("roms/ibm_logo.ch8");
 }
