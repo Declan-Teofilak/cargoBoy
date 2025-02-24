@@ -8,22 +8,39 @@ use macroquad::miniquad::window::set_window_size;
 const MEM_SIZE: usize = 4096;
 const ROM_START: usize = 0x200;
 
-struct chip8 {
+struct Chip8 {
     memory: [u8;4096],
     registers: [u8; 16],
     program_counter: u16,
     i_register: u16,
     // not used currently
-    opcode_handlers: HashMap<u16, fn(&mut chip8)>,
+    opcode_handlers: HashMap<u16, fn(&mut Chip8)>,
     font: [u16;80],
     // for handling sub-routines
     stack: Vec<u16>,
+    screen_values: ScreenData,
+}
+
+struct ScreenData {
+    x_values: [u8;640],
+    y_values: [u8;320],
+}
+
+impl ScreenData {
+    fn new() -> Self {
+        let mut instance = ScreenData {
+            x_values: [0;640],
+            y_values: [0;320]
+        };
+
+        instance
+    }
 }
 
 // create our chip8 struct
-impl chip8 {
-    fn new() -> chip8 {
-        let mut vm = chip8 {
+impl Chip8 {
+    fn new() -> Chip8 {
+        let mut vm = Chip8 {
             memory: [0;4096],
             registers: [0; 16],
             i_register: 0, // general purpose index register?
@@ -47,6 +64,10 @@ impl chip8 {
                 0xF0, 0x80, 0xF0, 0x80, 0x80  // F
             ],
             stack: Vec::with_capacity(MEM_SIZE),
+            screen_values: ScreenData {
+                x_values: [0;640],
+                y_values: [0;320],
+            }
         };
 
         vm.prepare_opcodes();
@@ -88,30 +109,36 @@ impl chip8 {
         }
         // draw
         else if opcode & 0xF000 == 0xD000 {
+            clear_background(BLACK);
             // prep our coordinates (ensuring that we prevent clipping with the mod (w/h)
-            let mut x_coord = (self.registers[y as usize] % 64) as f32;
-            let mut y_coord = (self.registers[x as usize] % 32) as f32;
+            let mut x_coord = (self.registers[x as usize] % 64) as f32;
+            let mut y_coord = (self.registers[y as usize] % 32) as f32;
+            let resolution_mod = 10.0;
             let pixel_height:f32  = n as f32;
-            // let resolution_mod = 10.0;
+            x_coord *= resolution_mod;
+            y_coord *= resolution_mod;
 
             for row_num in 0..n {
                 let sprite_row = self.memory[self.i_register as usize + row_num as usize];
-                // we use val 128 (1000000) for the mask, and bitwise shift right every op
-                // until we are at 0
-                let mut mask_checker = 0x80;
-                while mask_checker != 0 {
-                    mask_checker = mask_checker >> 1;
-                    if (sprite_row & mask_checker) == 0 {
-                        draw_rectangle(x_coord, y_coord, 1.0, pixel_height, WHITE);
-                    }
-                    else {
-                        draw_rectangle(x_coord, y_coord, 1.0, pixel_height, BLACK);
-                    }
 
-                    x_coord += 1.0;
+                for row_bit in (0..8).rev() {
+                    let sprite_data = (sprite_row >> row_bit) & 1;
+                    let draw_x = x_coord + ((7 - row_bit) as f32 * resolution_mod);
+                    let draw_y = y_coord + ((row_num as f32) * resolution_mod);
+
+                    if draw_x < 640.0 && draw_y < 320.0 {
+                        if sprite_data == 1 {
+                            if (self.screen_values.x_values[draw_x as usize] == 1) {
+                                draw_rectangle(draw_x , draw_y, 1.0, pixel_height, BLACK);
+                                self.screen_values.x_values[draw_x as usize] = 0;
+                            }
+                            else {
+                                draw_rectangle(draw_x , draw_y, 1.0, pixel_height, WHITE);
+                                self.screen_values.x_values[draw_x as usize] = 1;
+                            }
+                        }
+                    }
                 }
-
-                y_coord += 1.0;
             }
         }
         else if opcode & 0xF000 == 0xA000 {
@@ -177,10 +204,9 @@ impl chip8 {
 
 #[macroquad::main("chip8")]
 async fn main() {
-    set_window_size(64 * 10, 32 * 10);
-    let mut chip8 = chip8::new();
+    set_window_size(640, 320);
+    let mut chip8 = Chip8::new();
     chip8.prep_rom();
-    clear_background(BLACK);
 
     loop {
         let current_instruction = chip8.fetch();
