@@ -24,7 +24,6 @@
 Thumbs.db # Windows specific
 
 # Rust specific files
-Cargo.lock # See explanation below
 /build/
 /out/
 
@@ -40,7 +39,3 @@ Cargo.lock # See explanation below
 # Temporary files
 *.tmp
 *.cache
-
-# Other files you might want to ignore
-.env # If you store environment variables in a file
-/dist/ # If you have a distribution/build folder
