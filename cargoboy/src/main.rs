@@ -4,6 +4,7 @@ use macroquad::prelude::*;
 use std::thread::sleep;
 use std::time::Duration;
 use macroquad::miniquad::window::set_window_size;
+use macroquad::prelude::scene::clear;
 
 const MEM_SIZE: usize = 4096;
 const ROM_START: usize = 0x200;
@@ -109,7 +110,6 @@ impl Chip8 {
         }
         // draw
         else if opcode & 0xF000 == 0xD000 {
-            clear_background(BLACK);
             // prep our coordinates (ensuring that we prevent clipping with the mod (w/h)
             let mut x_coord = (self.registers[x as usize] % 64) as f32;
             let mut y_coord = (self.registers[y as usize] % 32) as f32;
@@ -122,19 +122,25 @@ impl Chip8 {
                 let sprite_row = self.memory[self.i_register as usize + row_num as usize];
 
                 for row_bit in (0..8).rev() {
+                    //mask the first bit
                     let sprite_data = (sprite_row >> row_bit) & 1;
+
+                    // fetch the drawing coords based on WHICH BIT we are currently operating on and the row we found it on
                     let draw_x = x_coord + ((7 - row_bit) as f32 * resolution_mod);
                     let draw_y = y_coord + ((row_num as f32) * resolution_mod);
 
                     if draw_x < 640.0 && draw_y < 320.0 {
+                        // if the masked bit is a 1, we check to see if we are turning the bit off (it is already on) or turning it on
                         if sprite_data == 1 {
-                            if (self.screen_values.x_values[draw_x as usize] == 1) {
-                                draw_rectangle(draw_x , draw_y, 1.0, pixel_height, BLACK);
+                            if (self.screen_values.x_values[draw_x as usize] == 1 && self.screen_values.y_values[draw_y as usize] == 1) {
+                                draw_rectangle(draw_x , draw_y, 10.0, pixel_height, BLACK);
                                 self.screen_values.x_values[draw_x as usize] = 0;
+                                self.screen_values.y_values[draw_y as usize] = 0;
                             }
                             else {
-                                draw_rectangle(draw_x , draw_y, 1.0, pixel_height, WHITE);
+                                draw_rectangle(draw_x , draw_y, 10.0, pixel_height, GREEN);
                                 self.screen_values.x_values[draw_x as usize] = 1;
+                                self.screen_values.y_values[draw_y as usize] = 1;
                             }
                         }
                     }
@@ -173,7 +179,7 @@ impl Chip8 {
         println!("current op_code: {}", op_code);
         println!("PC after fetch: {}", self.program_counter);
 
-        return op_code;
+        op_code
     }
 
     // want to create a map of each opCode, but not worth it lol
@@ -214,6 +220,6 @@ async fn main() {
 
         next_frame().await;
 
-        sleep(Duration::from_millis(60));
+        //sleep(Duration::from_millis(1));
     }
 }
